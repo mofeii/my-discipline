@@ -1,46 +1,49 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from pydantic import BaseModel
+from typing import List
 import calendar
 from datetime import datetime
 
 app = FastAPI()
 
-class DatesRequest(BaseModel):
-    dates: list[str]
+
+class DateList(BaseModel):
+    dates: List[str]  # Формат: ["14-03-2025", "20-03-2025"]
+
 
 @app.post("/calendar")
-def get_calendar(request: DatesRequest):
-    # Парсим входные строки в datetime и забираем год/месяц из первой даты
-    date_objs = [datetime.strptime(d, "%d-%m-%Y") for d in request.dates]
-    if not date_objs:
-        return {"calendar": "Нет дат для обработки"}
+def generate_calendar(date_list: DateList):
+    # Преобразуем строки в datetime format
+    parsed_dates = [datetime.strptime(d, "%d-%m-%Y") for d in date_list.dates]
+    if not parsed_dates:
+        return {"error": "No dates provided"}
 
-    year, month = date_objs[0].year, date_objs[0].month
-    # Множество дней, которые нужно отметить
-    mark_days = {dt.day for dt in date_objs if dt.year == year and dt.month == month}
+    # Предполагаем, что все даты относятся к одному месяцу
+    target_year = parsed_dates[0].year
+    target_month = parsed_dates[0].month
 
-    # Генерируем матрицу недель: каждая неделя — список из 7 чисел (0 — если день не в этом месяце)
-    cal = calendar.Calendar(firstweekday=0)  # 0 = понедельник
-    weeks = cal.monthdayscalendar(year, month)
+    # Создаем календарь месяца
+    cal = calendar.Calendar()
+    month_days = cal.monthdayscalendar(target_year, target_month)
 
-    # Собираем текст по строкам
-    lines = []
-    for week in weeks:
-        cells = []
+    # Создаем множество дней с галочкой
+    check_days = set(d.day for d in parsed_dates)
+
+    # Строка заголовка
+    result = f"Календарь активностей для {target_year}-{str(target_month).zfill(2)}:\n"
+    result += "Пн Вт Ср Чт Пт Сб Вс\n"
+
+    # Формируем строки с днями
+    for week in month_days:
         for day in week:
             if day == 0:
-                cell = ""           # пусто
-            elif day in mark_days:
-                cell = "✅"         # эмодзи вместо числа
+                result += "   "
+            elif day in check_days:
+                result += "✅ "
+            elif day < 10:
+                result += f" {day} "
             else:
-                cell = str(day)     # обычный номер
-            cells.append(cell)
-        # Выравниваем каждую ячейку по правому краю в ширине 2 символа
-        row = " ".join(f"{cell:>2}" for cell in cells)
-        lines.append(row)
+                result += f"{day} "
+        result += "\n"
 
-    header = "Пн Вт Ср Чт Пт Сб Вс"
-    title = f"Календарь активностей для {year}-{month:02d}:"
-    calendar_text = "\n".join([title, header] + lines)
-
-    return {"calendar": calendar_text}
+    return {"calendar": result}
